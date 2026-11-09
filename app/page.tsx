@@ -1,4 +1,4 @@
-import Image from "next/image";
+/* import Image from "next/image";
 
 export default function Home() {
   return (
@@ -66,4 +66,37 @@ export default function Home() {
       </main>
     </div>
   );
+}
+*/
+
+import { Suspense } from "react";
+import { supabase } from "@/lib/supabase";
+
+export default function Page() {
+  return (
+    <main>
+      <h1>Todos</h1>
+      <Suspense fallback={<p>กำลังโหลด...</p>}>
+        <TodoList />
+      </Suspense>
+    </main>
+  );
+}
+
+async function TodoList() {
+  const { data, error } = await supabase
+    .from("todos")
+    .select("*");
+
+  if (error) {
+    return <p>เกิดข้อผิดพลาด: {error.message}</p>;
+  }
+
+  return (
+  <ul>
+    {data.map((todo) => (
+      <li key={todo.id}>{todo.title}</li>
+    ))}
+  </ul>
+);
 }
