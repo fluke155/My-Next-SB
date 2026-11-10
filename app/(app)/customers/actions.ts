@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
+import { getCustomFields, readCustomFieldValues } from "@/lib/custom-fields";
+import { todayISO } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import type { FormState } from "@/lib/types";
 
@@ -35,11 +37,19 @@ function readCustomer(formData: FormData) {
     phone: text(formData, "phone"),
     email: text(formData, "email"),
     address: text(formData, "address"),
+    birth_date: text(formData, "birth_date"),
   };
 }
 
 function validateCustomer(c: ReturnType<typeof readCustomer>) {
   if (!c.full_name) return "กรุณากรอกชื่อจริง";
+  if (c.birth_date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(c.birth_date) || Number.isNaN(Date.parse(c.birth_date))) {
+      return "รูปแบบวันเกิดไม่ถูกต้อง";
+    }
+    if (c.birth_date > todayISO()) return "วันเกิดต้องไม่เป็นวันในอนาคต";
+    if (c.birth_date < "1900-01-01") return "วันเกิดต้องไม่ก่อนปี ค.ศ. 1900";
+  }
   if (c.email && !/^\S+@\S+\.\S+$/.test(c.email)) return "รูปแบบอีเมลไม่ถูกต้อง";
   if (c.phone && !/^[0-9+\-\s()]{6,20}$/.test(c.phone)) return "รูปแบบเบอร์โทรไม่ถูกต้อง";
   return null;
@@ -52,7 +62,19 @@ export async function createCustomer(_prev: FormState, formData: FormData): Prom
   if (invalid) return { error: invalid };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.from("customers").insert(customer).select("id").single();
+  const fields = await getCustomFields(supabase);
+  const custom = readCustomFieldValues(fields, formData);
+  if (custom.error) return { error: custom.error };
+
+  // ยังไม่มีฟิลด์เสริม (หรือยังไม่ได้รัน migration 003) ไม่ต้องส่ง extra
+  const row: Record<string, unknown> = fields.length
+    ? { ...customer, extra: custom.values }
+    : customer;
+  const { data, error } = await supabase
+    .from("customers")
+    .insert(row)
+    .select("id")
+    .single();
   if (error) return { error: `บันทึกไม่สำเร็จ: ${error.message}` };
 
   revalidateCustomers();
@@ -70,7 +92,24 @@ export async function updateCustomer(
   if (invalid) return { error: invalid };
 
   const supabase = await createClient();
-  const { error } = await supabase.from("customers").update(customer).eq("id", id);
+  const fields = await getCustomFields(supabase);
+  const custom = readCustomFieldValues(fields, formData);
+  if (custom.error) return { error: custom.error };
+
+  let update: Record<string, unknown> = customer;
+  if (fields.length) {
+    const { data: existing } = await supabase
+      .from("customers")
+      .select("extra")
+      .eq("id", id)
+      .single();
+    // เก็บค่าของฟิลด์ที่ถูกซ่อนไว้ แล้วแทนค่าเฉพาะฟิลด์ที่แสดงในฟอร์ม
+    const extra: Record<string, unknown> = { ...(existing?.extra ?? {}) };
+    for (const f of fields) delete extra[f.key];
+    update = { ...customer, extra: { ...extra, ...custom.values } };
+  }
+
+  const { error } = await supabase.from("customers").update(update).eq("id", id);
   if (error) return { error: `บันทึกไม่สำเร็จ: ${error.message}` };
 
   revalidateCustomers();

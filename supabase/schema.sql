@@ -93,9 +93,13 @@ create table if not exists public.customers (
   phone text,
   email text,
   address text,
+  birth_date date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- สำหรับฐานข้อมูลที่สร้างไว้ก่อนมีคอลัมน์วันเกิด
+alter table public.customers add column if not exists birth_date date;
 
 alter table public.customers enable row level security;
 
@@ -181,6 +185,129 @@ create policy "orders: admin delete"
   on public.orders for delete
   to authenticated
   using ((select public.is_admin()));
+
+-- ---------------------------------------------------------------------
+-- 3.5 Custom Fields (ช่องข้อมูลลูกค้าที่ admin เพิ่มเองได้)
+--     ดูคำอธิบายใน supabase/migrations/003_customer_custom_fields.sql
+-- ---------------------------------------------------------------------
+-- 1. ค่าของฟิลด์เสริม เก็บรวมในคอลัมน์ JSONB เดียว
+alter table public.customers
+  add column if not exists extra jsonb not null default '{}'::jsonb;
+
+-- 2. นิยามฟิลด์
+create table if not exists public.customer_fields (
+  id uuid primary key default gen_random_uuid(),
+  key text not null unique check (key ~ '^[a-z][a-z0-9_]{1,40}: bucket "slips" (private, รูปไม่เกิน 5 MB)
+-- ---------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('slips', 'slips', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update
+  set public = excluded.public,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "slips: authenticated read" on storage.objects;
+create policy "slips: authenticated read"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'slips');
+
+drop policy if exists "slips: admin insert" on storage.objects;
+create policy "slips: admin insert"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'slips' and (select public.is_admin()));
+
+drop policy if exists "slips: admin update" on storage.objects;
+create policy "slips: admin update"
+  on storage.objects for update
+  to authenticated
+  using (bucket_id = 'slips' and (select public.is_admin()))
+  with check (bucket_id = 'slips' and (select public.is_admin()));
+
+drop policy if exists "slips: admin delete" on storage.objects;
+create policy "slips: admin delete"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'slips' and (select public.is_admin()));
+
+-- ---------------------------------------------------------------------
+-- 5. สร้าง profile ให้ผู้ใช้ที่สมัครไว้ก่อนรันไฟล์นี้ (ถ้ามี)
+-- ---------------------------------------------------------------------
+insert into public.profiles (id, email, full_name, role)
+select u.id, u.email, coalesce(u.raw_user_meta_data ->> 'full_name', ''), 'user'
+from auth.users u
+on conflict (id) do nothing;
+
+-- =====================================================================
+-- ตั้ง admin คนแรก: สมัครผ่านหน้าเว็บก่อน แล้วรันคำสั่งนี้ (เปลี่ยนอีเมล)
+--
+--   update public.profiles set role = 'admin' where email = 'you@example.com';
+-- =====================================================================
+),
+  label text not null check (length(trim(label)) > 0),
+  type text not null check (type in ('text', 'textarea', 'number', 'date', 'select', 'checkbox')),
+  required boolean not null default false,
+  options text[] not null default '{}',
+  sort_order integer not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists customer_fields_sort_idx
+  on public.customer_fields (sort_order, created_at);
+
+alter table public.customer_fields enable row level security;
+
+drop policy if exists "customer_fields: authenticated read" on public.customer_fields;
+create policy "customer_fields: authenticated read"
+  on public.customer_fields for select
+  to authenticated
+  using (true);
+
+drop policy if exists "customer_fields: admin insert" on public.customer_fields;
+create policy "customer_fields: admin insert"
+  on public.customer_fields for insert
+  to authenticated
+  with check ((select public.is_admin()));
+
+drop policy if exists "customer_fields: admin update" on public.customer_fields;
+create policy "customer_fields: admin update"
+  on public.customer_fields for update
+  to authenticated
+  using ((select public.is_admin()))
+  with check ((select public.is_admin()));
+
+drop policy if exists "customer_fields: admin delete" on public.customer_fields;
+create policy "customer_fields: admin delete"
+  on public.customer_fields for delete
+  to authenticated
+  using ((select public.is_admin()));
+
+-- 3. ลบฟิลด์ + ลบค่าของฟิลด์นั้นออกจากลูกค้าทุกคน (ในคำสั่งเดียว)
+--    security invoker = ทำงานด้วยสิทธิ์ของคนเรียก RLS จึงยอมให้เฉพาะ admin
+create or replace function public.delete_customer_field(p_id uuid)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $
+declare
+  v_key text;
+begin
+  delete from public.customer_fields where id = p_id returning key into v_key;
+  if v_key is null then
+    raise exception 'ไม่พบฟิลด์ หรือไม่มีสิทธิ์ลบ';
+  end if;
+
+  update public.customers
+     set extra = extra - v_key
+   where extra ? v_key;
+end;
+$;
+
+revoke execute on function public.delete_customer_field(uuid) from anon;
+grant execute on function public.delete_customer_field(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- 4. Storage: bucket "slips" (private, รูปไม่เกิน 5 MB)

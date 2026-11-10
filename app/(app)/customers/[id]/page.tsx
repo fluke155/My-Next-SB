@@ -1,13 +1,24 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
-import { FileImage, Mail, MapPin, Pencil, Phone, Plus, ReceiptText } from "lucide-react";
+import {
+  Cake,
+  FileImage,
+  Mail,
+  MapPin,
+  Pencil,
+  Phone,
+  Plus,
+  ReceiptText,
+  Tag,
+} from "lucide-react";
 import { LinkButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DeleteButton } from "@/components/ui/form-controls";
 import { BackLink, EmptyState, Skeleton, TableSkeleton } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
-import { formatDate, formatTHB, initials } from "@/lib/format";
+import { formatCustomFieldValue, getCustomFields } from "@/lib/custom-fields";
+import { formatBirthDate, formatDate, formatTHB, initials } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import type { Customer, Order } from "@/lib/types";
 import { deleteCustomer, deleteOrder } from "../actions";
@@ -47,7 +58,7 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   const supabase = await createClient();
-  const [{ data: customerData }, { data: ordersData }] = await Promise.all([
+  const [{ data: customerData }, { data: ordersData }, fields] = await Promise.all([
     supabase.from("customers").select("*").eq("id", id).maybeSingle(),
     supabase
       .from("orders")
@@ -55,6 +66,7 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
       .eq("customer_id", id)
       .order("order_date", { ascending: false })
       .order("created_at", { ascending: false }),
+    getCustomFields(supabase),
   ]);
   if (!customerData) notFound();
   const customer = customerData as Customer;
@@ -105,8 +117,11 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
         {/* ข้อมูลติดต่อ */}
         <div className="space-y-6">
           <Card>
-            <CardHeader title="ข้อมูลติดต่อ" />
+            <CardHeader title="ข้อมูลลูกค้า" />
             <dl className="space-y-4 p-5 text-sm">
+              <InfoRow icon={<Cake className="size-4" />} label="วันเดือนปีเกิด">
+                {formatBirthDate(customer.birth_date)}
+              </InfoRow>
               <InfoRow icon={<Phone className="size-4" />} label="เบอร์โทร">
                 {customer.phone ? (
                   <a href={`tel:${customer.phone}`} className="text-indigo-600 hover:underline">
@@ -130,6 +145,21 @@ async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
               </InfoRow>
             </dl>
           </Card>
+
+          {fields.length > 0 && (
+            <Card>
+              <CardHeader title="ข้อมูลเพิ่มเติม" />
+              <dl className="space-y-4 p-5 text-sm">
+                {fields.map((field) => (
+                  <InfoRow key={field.id} icon={<Tag className="size-4" />} label={field.label}>
+                    <span className="whitespace-pre-line">
+                      {formatCustomFieldValue(field, customer.extra?.[field.key])}
+                    </span>
+                  </InfoRow>
+                ))}
+              </dl>
+            </Card>
+          )}
 
           <Card className="grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-800">
             <div className="p-5">

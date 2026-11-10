@@ -4,6 +4,8 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/ui/card";
 import { BackLink, Skeleton } from "@/components/ui/misc";
 import { requireAdmin } from "@/lib/auth";
+import { getCustomFields } from "@/lib/custom-fields";
+import { todayISO } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import type { Customer } from "@/lib/types";
 import { updateCustomer } from "../../actions";
@@ -26,7 +28,10 @@ async function EditCustomer({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   const supabase = await createClient();
-  const { data } = await supabase.from("customers").select("*").eq("id", id).maybeSingle();
+  const [{ data }, fields] = await Promise.all([
+    supabase.from("customers").select("*").eq("id", id).maybeSingle(),
+    getCustomFields(supabase),
+  ]);
   if (!data) notFound();
   const customer = data as Customer;
 
@@ -41,6 +46,8 @@ async function EditCustomer({ params }: { params: Promise<{ id: string }> }) {
         action={updateCustomer.bind(null, id)}
         customer={customer}
         cancelHref={`/customers/${id}`}
+        maxBirthDate={todayISO()}
+        fields={fields}
       />
     </>
   );

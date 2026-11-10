@@ -3,6 +3,9 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/ui/card";
 import { BackLink, Skeleton } from "@/components/ui/misc";
 import { requireAdmin } from "@/lib/auth";
+import { getCustomFields } from "@/lib/custom-fields";
+import { todayISO } from "@/lib/format";
+import { createClient } from "@/lib/supabase/server";
 import { createCustomer } from "../actions";
 import { CustomerForm } from "../customer-form";
 
@@ -25,5 +28,13 @@ export default function NewCustomerPage() {
 
 async function AdminOnlyForm() {
   await requireAdmin();
-  return <CustomerForm action={createCustomer} cancelHref="/customers" />;
+  const fields = await getCustomFields(await createClient());
+  return (
+    <CustomerForm
+      action={createCustomer}
+      cancelHref="/customers"
+      maxBirthDate={todayISO()}
+      fields={fields}
+    />
+  );
 }

@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UserCog, Users } from "lucide-react";
+import { SlidersHorizontal, UserCog, Users } from "lucide-react";
 import type { Role } from "@/lib/types";
 
 const items = [
   { href: "/customers", label: "ลูกค้า", icon: Users, adminOnly: false },
   { href: "/users", label: "ผู้ใช้งาน", icon: UserCog, adminOnly: true },
+  { href: "/settings/fields", label: "ตั้งค่าฟิลด์", icon: SlidersHorizontal, adminOnly: true },
 ];
 
 function useItems(role: Role) {
