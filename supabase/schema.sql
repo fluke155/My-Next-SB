@@ -197,54 +197,7 @@ alter table public.customers
 -- 2. นิยามฟิลด์
 create table if not exists public.customer_fields (
   id uuid primary key default gen_random_uuid(),
-  key text not null unique check (key ~ '^[a-z][a-z0-9_]{1,40}: bucket "slips" (private, รูปไม่เกิน 5 MB)
--- ---------------------------------------------------------------------
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('slips', 'slips', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
-on conflict (id) do update
-  set public = excluded.public,
-      file_size_limit = excluded.file_size_limit,
-      allowed_mime_types = excluded.allowed_mime_types;
-
-drop policy if exists "slips: authenticated read" on storage.objects;
-create policy "slips: authenticated read"
-  on storage.objects for select
-  to authenticated
-  using (bucket_id = 'slips');
-
-drop policy if exists "slips: admin insert" on storage.objects;
-create policy "slips: admin insert"
-  on storage.objects for insert
-  to authenticated
-  with check (bucket_id = 'slips' and (select public.is_admin()));
-
-drop policy if exists "slips: admin update" on storage.objects;
-create policy "slips: admin update"
-  on storage.objects for update
-  to authenticated
-  using (bucket_id = 'slips' and (select public.is_admin()))
-  with check (bucket_id = 'slips' and (select public.is_admin()));
-
-drop policy if exists "slips: admin delete" on storage.objects;
-create policy "slips: admin delete"
-  on storage.objects for delete
-  to authenticated
-  using (bucket_id = 'slips' and (select public.is_admin()));
-
--- ---------------------------------------------------------------------
--- 5. สร้าง profile ให้ผู้ใช้ที่สมัครไว้ก่อนรันไฟล์นี้ (ถ้ามี)
--- ---------------------------------------------------------------------
-insert into public.profiles (id, email, full_name, role)
-select u.id, u.email, coalesce(u.raw_user_meta_data ->> 'full_name', ''), 'user'
-from auth.users u
-on conflict (id) do nothing;
-
--- =====================================================================
--- ตั้ง admin คนแรก: สมัครผ่านหน้าเว็บก่อน แล้วรันคำสั่งนี้ (เปลี่ยนอีเมล)
---
---   update public.profiles set role = 'admin' where email = 'you@example.com';
--- =====================================================================
-),
+  key text not null unique check (key ~ '^[a-z][a-z0-9_]{1,40}$'),
   label text not null check (length(trim(label)) > 0),
   type text not null check (type in ('text', 'textarea', 'number', 'date', 'select', 'checkbox')),
   required boolean not null default false,
@@ -291,7 +244,7 @@ returns void
 language plpgsql
 security invoker
 set search_path = ''
-as $
+as $$
 declare
   v_key text;
 begin
@@ -304,7 +257,7 @@ begin
      set extra = extra - v_key
    where extra ? v_key;
 end;
-$;
+$$;
 
 revoke execute on function public.delete_customer_field(uuid) from anon;
 grant execute on function public.delete_customer_field(uuid) to authenticated;
