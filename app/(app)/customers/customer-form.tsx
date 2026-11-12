@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 import { LinkButton } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
@@ -8,6 +8,7 @@ import { SubmitButton } from "@/components/ui/form-controls";
 import { Alert } from "@/components/ui/misc";
 import { fieldInputName } from "@/lib/custom-fields";
 import type { CustomField, Customer, FormState } from "@/lib/types";
+import { AiFillBox } from "./ai-fill-box";
 
 /** สร้างช่องกรอก 1 ช่องตามชนิดของฟิลด์ */
 function CustomFieldInput({ field, value }: { field: CustomField; value: unknown }) {
@@ -69,6 +70,7 @@ export function CustomerForm({
   cancelHref,
   maxBirthDate,
   fields,
+  aiFill = false,
 }: {
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
   customer?: Customer;
@@ -77,13 +79,17 @@ export function CustomerForm({
   maxBirthDate: string;
   /** Custom Fields ที่เปิดใช้งาน (สร้างช่องกรอกอัตโนมัติ) */
   fields: CustomField[];
+  /** แสดงกล่อง "วางข้อความแล้วให้ AI กรอกให้" (ใช้ Ollama) */
+  aiFill?: boolean;
 }) {
   const [state, formAction] = useActionState(action, null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   return (
     <Card>
-      <form action={formAction} className="space-y-6 p-5 sm:p-6">
+      <form ref={formRef} action={formAction} className="space-y-6 p-5 sm:p-6">
         {state?.error && <Alert>{state.error}</Alert>}
+        {aiFill && <AiFillBox formRef={formRef} />}
 
         <section className="space-y-4">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">ข้อมูลทั่วไป</h2>

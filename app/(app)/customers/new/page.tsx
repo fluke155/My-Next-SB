@@ -35,6 +35,7 @@ async function AdminOnlyForm() {
       cancelHref="/customers"
       maxBirthDate={todayISO()}
       fields={fields}
+      aiFill
     />
   );
 }
